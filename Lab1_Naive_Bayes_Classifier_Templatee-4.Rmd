@@ -142,12 +142,12 @@ library(ggplot2)
 
 ```{r}
 list.files(getwd())
-list.files("data/0-authors")
+list.files("data/2-fake_news")
 ```
 
 ```{r}
-test_path <- "data/0-authors/test.csv"
-train_path <- "data/0-authors/train.csv"
+test_path <- "data/2-fake_news/test.csv"
+train_path <- "data/2-fake_news/train.csv"
 
 stop_words <- read_file("stop_words.txt")
 # https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
@@ -161,9 +161,8 @@ test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
 ```
 
 ```{r}
-# note the power functional features of R bring us! 
-tidy_text <- unnest_tokens(train, 'splitted', 'text', token="words") %>%
-             filter(!splitted %in% stop_words)
+# note the power functional features of R bring ustidy_text <- unnest_tokens(train %>% select(-X, -Headline), 'splitted', 'Body', token="words") %>%
+             filter(!splitted %in% splitted_stop_words)
 
 tidy_text %>% count(splitted,sort=TRUE)
 ```
@@ -182,20 +181,75 @@ naiveBayes <- setRefClass("naiveBayes",
                           
        # here it would be wise to have some vars to store intermediate result
        # frequency dict etc. Though pay attention to bag of words! 
-       fields = list(),
+       fields = list(
+          vocab = "character",           # all unique words
+          class_probs = "list",          # prior probabilities for each class
+          word_probs = "list"            # conditional probabilities P(word|class)
+       ),
        methods = list(
                     # prepare your training data as X - bag of words for each of your
                     # messages and corresponding label for the message encoded as 0 or 1 
                     # (binary classification task)
-                    fit = function(X, y)
-                    {
-                         # TODO
-                    },
+                    fit = function(X, y) {
+                          # Vocabulary: column names of X
+                          vocab <<- colnames(X)
+                    
+                          # Class priors P(class)
+                          class_counts <- table(y)
+                          class_probs <<- as.list(class_counts / length(y))
+                    
+                          # Conditional probabilities P(word|class) with Laplace smoothing
+                          word_probs_local <- list()
+                          V <- length(vocab)  # vocabulary size
+                    
+                          for (cl in names(class_counts)) {
+                            # rows of X belonging to this class
+                            rows_cl <- which(y == cl)
+                    
+                            # total counts of each word across all docs of this class
+                            # colSums works for data.frame or sparse matrix
+                            counts <- colSums(X[rows_cl, , drop = FALSE])
+                    
+                            total_words <- sum(counts)
+                    
+                            # Laplace smoothing: (count + 1) / (total_words + V)
+                            probs <- (counts + 1) / (total_words + V)
+                    
+                            # store as named numeric vector
+                            word_probs_local[[cl]] <- list(
+                              probs   = probs,
+                              default = 1 / (total_words + V) # for unseen words
+                            )
+                          }
+                    
+                          word_probs <<- word_probs_local
+                        }
                     
                     # return prediction for a single message 
                     predict = function(message)
                     {
-                         # TODO
+                         # Tokenize
+                         words <- unnest_tokens(data.frame(text=message),
+                                                word, text, token="words")$word
+                         words <- words[!words %in% splitted_stop_words]
+                         
+                         # Compute log posterior for each class
+                         log_scores <- sapply(names(class_probs), function(cl) {
+                           log_prior <- log(class_probs[[cl]])
+                           cond <- word_probs[[cl]]
+                           # Sum of log probabilities of words
+                           log_lik <- sum(sapply(words, function(w) {
+                             if (w %in% names(cond$probs)) {
+                               log(cond$probs[[w]])
+                             } else {
+                               log(cond$default)
+                             }
+                           }))
+                           log_prior + log_lik
+                         })
+                         
+                         # Return class with maximum log posterior
+                         names(which.max(log_scores))
                     },
                     
                     # score you test set so to get the understanding how well you model
@@ -209,8 +263,46 @@ naiveBayes <- setRefClass("naiveBayes",
                     }
 ))
 
-model = naiveBayes()
-model$fit()
+```
+
+```{r}
+train$text <- paste(train$Headline, train$Body)
+
+# Tokenize the text into words, removing stop words
+tidy_text <- train %>%
+  select(text, Label = Label) %>%  # replace 'Label' with your actual column name for class
+  unnest_tokens(word, text) %>%
+  filter(!word %in% splitted_stop_words)
+
+# Count word occurrences per document
+word_counts <- tidy_text %>%
+  group_by(Label, doc_id = row_number()) %>%  # create doc_id for each row
+  count(word) %>%
+  ungroup()
+
+# Convert to wide format: each word as a column, each row as a document
+X <- word_counts %>%
+  pivot_wider(
+    names_from = word,
+    values_from = n,
+    values_fill = list(n = 0)  # fill missing words with 0
+  ) %>%
+  select(-Label, -doc_id)  # keep only word counts for X
+
+# Create labels vector y
+y <- word_counts %>%
+  distinct(Label, doc_id) %>%
+  arrange(doc_id) %>%
+  pull(Label)
+
+# Check dimensions
+dim(X)  # rows = number of documents, cols = vocabulary size
+length(y)  # should match number of rows in X
+
+# Fit model
+model$fit(X, y)
+
+
 ```
 
 ## Measure effectiveness of your classifier
