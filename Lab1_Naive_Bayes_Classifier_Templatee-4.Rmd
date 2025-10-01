@@ -259,10 +259,70 @@ naiveBayes <- setRefClass("naiveBayes",
                     # try how well your model generalizes to real world data! 
                     score = function(X_test, y_test)
                     {
-                         # TODO
+                    if (is.data.frame(X_test)) {
+                        if (!all(c("text","label") %in% names(X_test))) stop("error message")
+                        texts <- X_test$text
+                        labels_true <- as.character(X_test$label)
+                    } else {
+                        texts <- as.character(X_test)
+                        if (is.null(y_test)) stop("provide y_test when X_test is character vector")
+                        labels_true <- as.character(y_test)
+                    }
+
+                    pred_res <- predict(texts)
+                    preds <- pred_res$pred
+
+                    # confusion matrix
+                    labs_all <- sort(unique(c(classes, labels_true, preds)))
+                    cm_tbl <- table(factor(labels_true, levels = labs_all), factor(preds, levels = labs_all))
+                    cm_df <- as.data.frame(cm_tbl)
+                    names(cm_df) <- c("true", "pred", "n")
+
+                    metrics <- tibble(class = labs_all) %>%
+                    rowwise() %>%
+                    mutate(
+                        TP = cm_tbl[class, class],
+                        FP = sum(cm_tbl[, class]) - TP,
+                        FN = sum(cm_tbl[class, ]) - TP,
+                        TN = sum(cm_tbl) - TP - FP - FN,
+                        Precision = ifelse((TP + FP)==0, NA, TP / (TP + FP)),
+                        Recall = ifelse((TP + FN)==0, NA, TP / (TP + FN)),
+                        F1 = ifelse(is.na(Precision) | is.na(Recall) | (Precision+Recall)==0, NA, 2 * Precision * Recall / (Precision + Recall))
+                    ) %>% ungroup()
+
+                    macro_precision <- mean(metrics$Precision, na.rm = TRUE)
+                    macro_recall <- mean(metrics$Recall, na.rm = TRUE)
+                    macro_f1 <- mean(metrics$F1, na.rm = TRUE)
+
+                    TP_total <- sum(diag(cm_tbl))
+                    total <- sum(cm_tbl)
+                    accuracy <- TP_total / total
+
+                    sum_TP <- sum(metrics$TP)
+                    sum_FP <- sum(metrics$FP)
+                    sum_FN <- sum(metrics$FN)
+                    micro_precision <- ifelse((sum_TP + sum_FP)==0, NA, sum_TP / (sum_TP + sum_FP))
+                    micro_recall <- ifelse((sum_TP + sum_FN)==0, NA, sum_TP / (sum_TP + sum_FN))
+                    micro_f1 <- ifelse(is.na(micro_precision) | is.na(micro_recall) | (micro_precision+micro_recall)==0, NA,
+                                        2 * micro_precision * micro_recall / (micro_precision + micro_recall))
+
+                    summary_metrics <- list(
+                        accuracy = accuracy,
+                        macro = list(precision = macro_precision, recall = macro_recall, f1 = macro_f1),
+                        micro = list(precision = micro_precision, recall = micro_recall, f1 = micro_f1)
+                    )
+
+
+                    # visalization # true
+
+
+                    return(list(confusion = cm_tbl, per_class = metrics, summary = summary_metrics, preds = preds))
+    
+
                     }
 ))
 
+<<<<<<< HEAD
 ```
 
 ```{r}
@@ -303,6 +363,20 @@ length(y)  # should match number of rows in X
 model$fit(X, y)
 
 
+=======
+model = naiveBayes()
+model$fit()
+
+### testing ###
+res <- model$score(test)  
+
+# metrics
+res$summary
+res$per_class
+
+# confusion matrix
+res$confusion
+>>>>>>> score
 ```
 
 ## Measure effectiveness of your classifier
