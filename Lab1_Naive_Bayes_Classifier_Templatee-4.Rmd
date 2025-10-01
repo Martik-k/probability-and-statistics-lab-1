@@ -14,7 +14,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Work breakdown
 
--   *Name1 Surname1*:
+-   *Kosiv Marta*:
 -   *Name2 Surname2*:
 -   *Name3 Surname3*:
 
@@ -153,15 +153,41 @@ stop_words <- read_file("stop_words.txt")
 # https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
 splitted_stop_words <- strsplit(stop_words, split='\n')
 splitted_stop_words <- splitted_stop_words[[1]]
+
 ```
 
 ```{r}
 train <-  read.csv(file = train_path, stringsAsFactors = FALSE)
 test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
+
+library(tm)
+library(Matrix)
+library(tidytext)
+
+# Train set
+train_bow <- train %>%
+  unnest_tokens(word, Body) %>%
+  filter(!word %in% splitted_stop_words) %>%
+  count(Label, word) %>%
+  tidyr::pivot_wider(names_from = word, values_from = n, values_fill = 0)
+
+train_bow_X <- as.matrix(train_bow[,-1])
+train_bow_y <- as.character(train_bow$Label)
+
+# Test set
+test_bow <- test %>%
+  unnest_tokens(word, Body) %>%
+  filter(!word %in% splitted_stop_words) %>%
+  count(Label, word) %>%
+  tidyr::pivot_wider(names_from = word, values_from = n, values_fill = 0)
+
+test_bow_X <- as.matrix(test_bow[,-1])
+test_bow_y <- as.character(test_bow$Label)
 ```
 
 ```{r}
-# note the power functional features of R bring ustidy_text <- unnest_tokens(train %>% select(-X, -Headline), 'splitted', 'Body', token="words") %>%
+# note the power functional features of R bring us
+tidy_text <- unnest_tokens(train %>% select(-X, -Headline), 'splitted', 'Body', token="words") %>%
              filter(!splitted %in% splitted_stop_words)
 
 tidy_text %>% count(splitted,sort=TRUE)
@@ -177,206 +203,153 @@ positive examples as a histogram, word cloud etc. Be creative!
 ## Classifier implementation
 
 ```{r}
-naiveBayes <- setRefClass("naiveBayes",
-                          
-       # here it would be wise to have some vars to store intermediate result
-       # frequency dict etc. Though pay attention to bag of words! 
-       fields = list(
-          vocab = "character",           # all unique words
-          class_probs = "list",          # prior probabilities for each class
-          word_probs = "list"            # conditional probabilities P(word|class)
-       ),
-       methods = list(
-                    # prepare your training data as X - bag of words for each of your
-                    # messages and corresponding label for the message encoded as 0 or 1 
-                    # (binary classification task)
-                    fit = function(X, y) {
-                          # Vocabulary: column names of X
-                          vocab <<- colnames(X)
-                    
-                          # Class priors P(class)
-                          class_counts <- table(y)
-                          class_probs <<- as.list(class_counts / length(y))
-                    
-                          # Conditional probabilities P(word|class) with Laplace smoothing
-                          word_probs_local <- list()
-                          V <- length(vocab)  # vocabulary size
-                    
-                          for (cl in names(class_counts)) {
-                            # rows of X belonging to this class
-                            rows_cl <- which(y == cl)
-                    
-                            # total counts of each word across all docs of this class
-                            # colSums works for data.frame or sparse matrix
-                            counts <- colSums(X[rows_cl, , drop = FALSE])
-                    
-                            total_words <- sum(counts)
-                    
-                            # Laplace smoothing: (count + 1) / (total_words + V)
-                            probs <- (counts + 1) / (total_words + V)
-                    
-                            # store as named numeric vector
-                            word_probs_local[[cl]] <- list(
-                              probs   = probs,
-                              default = 1 / (total_words + V) # for unseen words
-                            )
-                          }
-                    
-                          word_probs <<- word_probs_local
-                        }
-                    
-                    # return prediction for a single message 
-                    predict = function(message)
-                    {
-                         # Tokenize
-                         words <- unnest_tokens(data.frame(text=message),
-                                                word, text, token="words")$word
-                         words <- words[!words %in% splitted_stop_words]
-                         
-                         # Compute log posterior for each class
-                         log_scores <- sapply(names(class_probs), function(cl) {
-                           log_prior <- log(class_probs[[cl]])
-                           cond <- word_probs[[cl]]
-                           # Sum of log probabilities of words
-                           log_lik <- sum(sapply(words, function(w) {
-                             if (w %in% names(cond$probs)) {
-                               log(cond$probs[[w]])
-                             } else {
-                               log(cond$default)
-                             }
-                           }))
-                           log_prior + log_lik
-                         })
-                         
-                         # Return class with maximum log posterior
-                         names(which.max(log_scores))
-                    },
-                    
-                    # score you test set so to get the understanding how well you model
-                    # works.
-                    # look at f1 score or precision and recall
-                    # visualize them 
-                    # try how well your model generalizes to real world data! 
-                    score = function(X_test, y_test)
-                    {
-                    if (is.data.frame(X_test)) {
-                        if (!all(c("text","label") %in% names(X_test))) stop("error message")
-                        texts <- X_test$text
-                        labels_true <- as.character(X_test$label)
-                    } else {
-                        texts <- as.character(X_test)
-                        if (is.null(y_test)) stop("provide y_test when X_test is character vector")
-                        labels_true <- as.character(y_test)
-                    }
-
-                    pred_res <- predict(texts)
-                    preds <- pred_res$pred
-
-                    # confusion matrix
-                    labs_all <- sort(unique(c(classes, labels_true, preds)))
-                    cm_tbl <- table(factor(labels_true, levels = labs_all), factor(preds, levels = labs_all))
-                    cm_df <- as.data.frame(cm_tbl)
-                    names(cm_df) <- c("true", "pred", "n")
-
-                    metrics <- tibble(class = labs_all) %>%
-                    rowwise() %>%
-                    mutate(
-                        TP = cm_tbl[class, class],
-                        FP = sum(cm_tbl[, class]) - TP,
-                        FN = sum(cm_tbl[class, ]) - TP,
-                        TN = sum(cm_tbl) - TP - FP - FN,
-                        Precision = ifelse((TP + FP)==0, NA, TP / (TP + FP)),
-                        Recall = ifelse((TP + FN)==0, NA, TP / (TP + FN)),
-                        F1 = ifelse(is.na(Precision) | is.na(Recall) | (Precision+Recall)==0, NA, 2 * Precision * Recall / (Precision + Recall))
-                    ) %>% ungroup()
-
-                    macro_precision <- mean(metrics$Precision, na.rm = TRUE)
-                    macro_recall <- mean(metrics$Recall, na.rm = TRUE)
-                    macro_f1 <- mean(metrics$F1, na.rm = TRUE)
-
-                    TP_total <- sum(diag(cm_tbl))
-                    total <- sum(cm_tbl)
-                    accuracy <- TP_total / total
-
-                    sum_TP <- sum(metrics$TP)
-                    sum_FP <- sum(metrics$FP)
-                    sum_FN <- sum(metrics$FN)
-                    micro_precision <- ifelse((sum_TP + sum_FP)==0, NA, sum_TP / (sum_TP + sum_FP))
-                    micro_recall <- ifelse((sum_TP + sum_FN)==0, NA, sum_TP / (sum_TP + sum_FN))
-                    micro_f1 <- ifelse(is.na(micro_precision) | is.na(micro_recall) | (micro_precision+micro_recall)==0, NA,
-                                        2 * micro_precision * micro_recall / (micro_precision + micro_recall))
-
-                    summary_metrics <- list(
-                        accuracy = accuracy,
-                        macro = list(precision = macro_precision, recall = macro_recall, f1 = macro_f1),
-                        micro = list(precision = micro_precision, recall = micro_recall, f1 = micro_f1)
-                    )
-
-
-                    # visalization # true
-
-
-                    return(list(confusion = cm_tbl, per_class = metrics, summary = summary_metrics, preds = preds))
+naiveBayes <- setRefClass(
+  "naiveBayes",
+  fields = list(
+    vocab = "character",
+    class_probs = "list",
+    word_probs = "list",
+    classes = "character"
+  ),
+  methods = list(
+    fit = function(X, y) {
+      vocab <<- colnames(X)
+      head(vocab)
+      class_counts <- table(y)
+      class_probs <<- as.list(class_counts / length(y))
+      classes <<- names(class_counts)   # зберігаємо тільки реальні класи
+      
+      word_probs_local <- list()
+      V <- length(vocab)
+      
+      for (cl in names(class_counts)) {
+        rows_cl <- which(y == cl)
+        counts <- colSums(X[rows_cl, , drop = FALSE])
+        total_words <- sum(counts)
+        probs <- (counts + 1) / (total_words + V)
+        
+        word_probs_local[[cl]] <- list(
+          probs = probs,
+          default = 1 / (total_words + V)
+        )
+      }
+      word_probs <<- word_probs_local
+    },
     
+    predict = function(messages) {
+      messages <- as.character(messages)
+      sapply(messages, function(message) {
+        # Remove NA or empty messages
+        if (is.na(message) || nchar(trimws(message)) == 0) return(NA_character_)
+        
+        # Tokenize
+        tokens <- unnest_tokens(tibble(text = message), word, text, token = "words")$word
+        tokens <- tokens[!tokens %in% splitted_stop_words]
+        tokens <- tokens[nchar(tokens) > 0]  # ignore empty tokens
+        
+        log_scores <- sapply(classes, function(cl) {
+          log_prior <- log(class_probs[[cl]])
+          cond <- word_probs[[cl]]
+          log_lik <- if (length(tokens) > 0) {
+            sum(sapply(tokens, function(w) {
+              if (w %in% names(cond$probs)) log(cond$probs[[w]])
+              else log(cond$default)
+            }))
+          } else {
+            0  # no words -> just use prior
+          }
+          log_prior + log_lik
+        })
+        
+        names(which.max(log_scores))
+      })
+    },
+    
+    score = function(X_test, y_test = NULL) {
+      if (is.data.frame(X_test)) {
+        if (!all(c("text","label") %in% names(X_test))) 
+          stop("Data frame must have columns 'text' and 'label'")
+        texts <- X_test$text
+        labels_true <- as.character(X_test$label)
+      } else {
+        texts <- as.character(X_test)
+        if (is.null(y_test)) stop("Provide y_test when X_test is character vector")
+        labels_true <- as.character(y_test)
+      }
+      
+      preds <- predict(texts)
+      
+      # confusion тільки по справжніх класах
+      cm_tbl <- table(
+        factor(labels_true, levels = classes),
+        factor(preds, levels = classes)
+      )
+      
+      metrics <- tibble(class = classes) %>%
+        rowwise() %>%
+        mutate(
+          TP = cm_tbl[class, class],
+          FP = sum(cm_tbl[, class]) - TP,
+          FN = sum(cm_tbl[class, ]) - TP,
+          TN = sum(cm_tbl) - TP - FP - FN,
+          Precision = ifelse((TP + FP) == 0, NA, TP / (TP + FP)),
+          Recall = ifelse((TP + FN) == 0, NA, TP / (TP + FN)),
+          F1 = ifelse(is.na(Precision) | is.na(Recall) | (Precision + Recall) == 0, NA,
+                      2 * Precision * Recall / (Precision + Recall))
+        ) %>%
+        ungroup()
+      
+      macro_precision <- mean(metrics$Precision, na.rm = TRUE)
+      macro_recall <- mean(metrics$Recall, na.rm = TRUE)
+      macro_f1 <- mean(metrics$F1, na.rm = TRUE)
+      
+      TP_total <- sum(diag(cm_tbl))
+      accuracy <- TP_total / sum(cm_tbl)
+      
+      sum_TP <- sum(metrics$TP)
+      sum_FP <- sum(metrics$FP)
+      sum_FN <- sum(metrics$FN)
+      micro_precision <- ifelse((sum_TP + sum_FP) == 0, NA, sum_TP / (sum_TP + sum_FP))
+      micro_recall <- ifelse((sum_TP + sum_FN) == 0, NA, sum_TP / (sum_TP + sum_FN))
+      micro_f1 <- ifelse(is.na(micro_precision) | is.na(micro_recall) | (micro_precision + micro_recall) == 0, NA,
+                         2 * micro_precision * micro_recall / (micro_precision + micro_recall))
+      
+      summary_metrics <- list(
+        accuracy = accuracy,
+        macro = list(precision = macro_precision, recall = macro_recall, f1 = macro_f1),
+        micro = list(precision = micro_precision, recall = micro_recall, f1 = micro_f1)
+      )
+      
+      list(confusion = cm_tbl, per_class = metrics, summary = summary_metrics, preds = preds)
+    }
+  )
+)
 
-                    }
-))
 
-<<<<<<< HEAD
 ```
 
 ```{r}
-train$text <- paste(train$Headline, train$Body)
+# Initialize classifier
+nb <- naiveBayes$new()
 
-# Tokenize the text into words, removing stop words
-tidy_text <- train %>%
-  select(text, Label = Label) %>%  # replace 'Label' with your actual column name for class
-  unnest_tokens(word, text) %>%
-  filter(!word %in% splitted_stop_words)
+# Використовуємо правильні змінні
+nb$fit(train_bow_X, train_bow_y)
 
-# Count word occurrences per document
-word_counts <- tidy_text %>%
-  group_by(Label, doc_id = row_number()) %>%  # create doc_id for each row
-  count(word) %>%
-  ungroup()
+# Predict single text
+sample_text <- "Breaking news: new study shows dramatic effects of climate change."
+pred_class <- nb$predict(sample_text)
+print(pred_class)
 
-# Convert to wide format: each word as a column, each row as a document
-X <- word_counts %>%
-  pivot_wider(
-    names_from = word,
-    values_from = n,
-    values_fill = list(n = 0)  # fill missing words with 0
-  ) %>%
-  select(-Label, -doc_id)  # keep only word counts for X
+# Score on test set
+score_res <- nb$score(test$Body, test$Label)
 
-# Create labels vector y
-y <- word_counts %>%
-  distinct(Label, doc_id) %>%
-  arrange(doc_id) %>%
-  pull(Label)
-
-# Check dimensions
-dim(X)  # rows = number of documents, cols = vocabulary size
-length(y)  # should match number of rows in X
-
-# Fit model
-model$fit(X, y)
+# View results
+score_res$summary
+score_res$per_class
+score_res$confusion
 
 
-=======
-model = naiveBayes()
-model$fit()
 
-### testing ###
-res <- model$score(test)  
-
-# metrics
-res$summary
-res$per_class
-
-# confusion matrix
-res$confusion
->>>>>>> score
 ```
 
 ## Measure effectiveness of your classifier
