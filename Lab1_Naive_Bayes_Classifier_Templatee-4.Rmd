@@ -14,9 +14,9 @@ knitr::opts_chunk$set(echo = TRUE)
 
 ## Work breakdown
 
--   *Kosiv Marta*:
--   *Name2 Surname2*:
--   *Name3 Surname3*:
+-   Kosiv Marta
+-   Ostap Kostiuk
+-   Volodymyr Lehchylo-Yanishevskiy
 
 ## Introduction
 
@@ -48,54 +48,24 @@ as
 $$\mathsf{P}(\mathrm{class} \mid \mathrm{\mathrm{observation}}) = \mathsf{P}(\mathrm{class})\times \prod_{i=1}^{n}\frac{\mathsf{P}(\mathrm{feature}_i\mid \mathrm{class})}{\mathsf{P}(\mathrm{feature}_i)}\tag{1}$$
 
 All the terms on the right-hand side can be estimated as corresponding
-relative frequencies using available data\
-
-**See [*this
-link*](https://www.javatpoint.com/machine-learning-naive-bayes-classifier)
-for more detailed explanations & examples :) Also you can watch [*this
-video*](https://youtu.be/O2L2Uv9pdDA?si=-ohkHVDuu3sLLGMq) for more
-examples!**
+relative frequencies using available data
 
 ## Data description
 
-There are 5 datasets uploaded on the cms (data.zip)
+Our dataset is **Fake news.**
 
-To determine your variant, take your team number from the list of teams
-on cms and take *mod 5* - this is the number of your data set.
+This data set contains data of American news: a headline and an abstract
+of the article. Each piece of news is classified as **fake** or
+**credible**. The task is to classify the news from test.csv as credible
+or fake.
 
--   **0 - authors** This data set consists of citations of three famous
-    writers: Edgar Alan Poe, Mary Wollstonecraft Shelley and HP
-    Lovecraft. The task with this data set is to classify a piece of
-    text with the author who was more likely to write it.
-
--   **1 - discrimination** This data set consists of tweets that have
-    discriminatory (sexism or racism) messages or of tweets that are of
-    neutral mood. The task is to determine whether a given tweet has
-    discriminatory mood or does not.
-
--   **2 - fake news** This data set contains data of American news: a
-    headline and an abstract of the article. Each piece of news is
-    classified as fake or credible. The task is to classify the news
-    from test.csv as credible or fake.
-
--   **3 - sentiment** All the text messages contained in this data set
-    are labeled with three sentiments: positive, neutral or negative.
-    The task is to classify some text message as the one of positive
-    mood, negative or neutral.
-
--   **4 - spam** This last data set contains SMS messages classified as
-    spam or non-spam (ham in the data set). The task is to determine
-    whether a given message is spam or non-spam.
-
-Each data set consists of two files: *train.csv* and *test.csv*. The
+This data set consists of two files: *train.csv* and *test.csv*. The
 first one is used to find the probabilities of the corresponding classes
 and the second one is used to test your classifier afterwards. Note that
 it is crucial to randomly split your data into training and testing
 parts to test the classifierʼs possibilities on the unseen data.
 
 ```{r}
-# here goes a list of recommended libraries,
-# though you may install other ones if they are needed
 library(tidytext)
 library(readr)
 library(dplyr)
@@ -104,41 +74,13 @@ library(ggplot2)
 
 ## Outline of the work
 
-1.  **Data pre-processing** (includes removing punctuation marks and
-    stop words, representing each message as a bag-of-words)
-2.  **Data visualization** (it's time to plot your data!)
-3.  **Classifier implementation** (using the training set, calculate all
-    the conditional probabilities in formula (1))
-4.  **Measurements of effectiveness of your classifier** (use the
-    results from the previous step to predict classes for messages in
-    the testing set and measure the accuracy, precision and recall, F1
-    score metric etc)
-5.  **Conclusions**
-
-*!! do not forget to submit both the (compiled) Rmd source file and the
-.html output !!*
+1.  **Data pre-processing**
+2.  **Data visualization**
+3.  **Classifier implementation**
+4.  **Measurements of effectiveness of your classifier**
+5.  **Conclusion**
 
 ## Data pre-processing
-
--   Read the *.csv* data files.
--   Сlear your data from punctuation or other unneeded symbols.
--   Clear you data from stop words. You don't want words as is, and, or
-    etc. to affect your probabilities distributions, so it is a wise
-    decision to get rid of them. Find list of stop words in the cms
-    under the lab task.
--   Represent each test message as its bag-of-words. Here:
-    <https://machinelearningmastery.com/gentle-introduction-bag-words-model/>
-    you can find general introduction to the bag-of-words model and
-    examples on to create it.
--   It is highly recommended to get familiar with R dataframes, it would
-    make the work much easier to do.
--   Useful links:
-    -   <https://steviep42.github.io/webscraping/book/bagofwords.html#tidytext> -
-        example of using *tidytext* to count frequencies of the words.
-    -   Basics of Text Mining in R:
-        <http://rstudio-pubs-static.s3.amazonaws.com/256588_57b585da6c054349825cba46685d8464.html>
-        . Note that it also includes an example on how to create a bag
-        of words from your text document.
 
 ```{r}
 list.files(getwd())
@@ -195,10 +137,72 @@ tidy_text %>% count(splitted,sort=TRUE)
 
 ## Data visualization
 
-Each time you work with some data, you need to understand it before you
-start processing it. R has very powerful tools to make nice plots and
-visualization. Show what are the most common words for negative and
-positive examples as a histogram, word cloud etc. Be creative!
+```{r}
+df <- train
+
+df <- df %>%
+  mutate(text = paste(Headline, Body),
+         doc_id = dplyr::row_number(),
+         Label  = as.factor(Label))
+
+sw <- if (exists("splitted_stop_words")) {
+  tolower(splitted_stop_words)
+} else {
+  tidytext::stop_words$word
+}
+
+tidy_text <- df %>%
+  dplyr::select(doc_id, Label, text) %>%
+  tidytext::unnest_tokens(word, text) %>%
+  dplyr::filter(!word %in% sw,
+                stringr::str_detect(word, "[a-z]"))
+
+# розподіл класів
+df %>%
+  dplyr::count(Label) %>%
+  ggplot2::ggplot(ggplot2::aes(x = Label, y = n)) +
+  ggplot2::geom_col() +
+  ggplot2::labs(title = "Розподіл документів за класами (train)",
+                x = "Клас", y = "Кількість") +
+  ggplot2::theme_minimal()
+
+# топ-20 слів 
+tidy_text %>%
+  dplyr::count(word, sort = TRUE) %>%
+  dplyr::slice_head(n = 20) %>%
+  ggplot2::ggplot(ggplot2::aes(x = reorder(word, n), y = n)) +
+  ggplot2::geom_col() +
+  ggplot2::coord_flip() +
+  ggplot2::labs(title = "Топ-20 слів (після чистки)",
+                x = NULL, y = "Частота") +
+  ggplot2::theme_minimal()
+
+# топ-10 слів у кожному класі
+top_by_class <- tidy_text %>%
+  dplyr::count(Label, word, sort = TRUE) %>%
+  dplyr::group_by(Label) %>%
+  dplyr::slice_head(n = 10) %>%
+  dplyr::ungroup()
+
+ggplot2::ggplot(top_by_class, ggplot2::aes(x = reorder(word, n), y = n)) +
+  ggplot2::geom_col() +
+  ggplot2::coord_flip() +
+  ggplot2::facet_wrap(~ Label, scales = "free_y") +
+  ggplot2::labs(title = "Топ-10 слів у кожному класі",
+                x = NULL, y = "Частота") +
+  ggplot2::theme_minimal()
+
+# гістограма довжин документів
+doc_len <- tidy_text %>%
+  dplyr::count(doc_id, name = "len") %>%
+  dplyr::left_join(df %>% dplyr::select(doc_id, Label), by = "doc_id")
+
+ggplot2::ggplot(doc_len, ggplot2::aes(x = len, fill = Label)) +
+  ggplot2::geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
+  ggplot2::labs(title = "Довжини документів (після стоп-слів)",
+                x = "Кількість слів", y = "Кількість документів") +
+  ggplot2::theme_minimal()
+```
 
 ## Classifier implementation
 
@@ -422,6 +426,43 @@ naiveBayes <- setRefClass(
 
 ```
 
+## Measure effectiveness of your classifier
+
+-   Confusion matrix:
+
+    -   A ***true positive*** result is one where the model correctly
+        predicts the positive class.
+    -   A ***true negative*** result is one where the model correctly
+        predicts the negative class.
+    -   A ***false positive*** result is one where the model incorrectly
+        predicts the positive class when it is actually negative.
+    -   A ***false negative*** result is one where the model incorrectly
+        predicts the negative class when it is actually positive.
+
+    Precision measures the proportion of true positive predictions among
+    all positive predictions made by the model.
+
+    $$
+    Precision = \frac{TP}{TP+FP}
+    $$
+
+    Recall, on the other hand, measures the proportion of true positives
+    identified out of all actual positive cases.
+
+    $$
+    Recall = \frac{TP}{TP+FN}
+    $$
+
+    F1 score is the harmonic mean of both precision and recall.
+
+    $$
+    F1 = \frac{2\times Precision \times Recall}{Precision + Recall}
+    $$
+
+-   Visualize them.
+
+-   Show failure cases.
+
 ```{r}
 # Initialize classifier
 nb <- naiveBayes$new()
@@ -464,130 +505,54 @@ cat("\n")
 
 ```
 
-## Measure effectiveness of your classifier
-
--   Note that accuracy is not always a good metric for your classifier.
-    Look at precision and recall curves, F1 score metric.
-
-    When evaluating the model, it's important to understand the
-    different types of classification results:
-
-    -   A ***true positive*** result is one where the model correctly
-        predicts the positive class.
-    -   A ***true negative*** result is one where the model correctly
-        predicts the negative class.
-    -   A ***false positive*** result is one where the model incorrectly
-        predicts the positive class when it is actually negative.
-    -   A ***false negative*** result is one where the model incorrectly
-        predicts the negative class when it is actually positive.
-
-    Precision measures the proportion of true positive predictions among
-    all positive predictions made by the model.
-
-    $$
-    Precision = \frac{TP}{TP+FP}
-    $$
-
-    Recall, on the other hand, measures the proportion of true positives
-    identified out of all actual positive cases.
-
-    $$
-    Recall = \frac{TP}{TP+FN}
-    $$
-
-    F1 score is the harmonic mean of both precision and recall.
-
-    $$
-    F1 = \frac{2\times Precision \times Recall}{Precision + Recall}
-    $$
-
-    **See [this
-    link](https://cohere.com/blog/classification-eval-metrics) to find
-    more information about metrics.**
-
--   Visualize them.
-
--   Show failure cases.
-
-```{r}
-df <- train
-
-# 1) Склеїмо текст і додамо стабільний doc_id
-df <- df %>%
-  mutate(text = paste(Headline, Body),
-         doc_id = dplyr::row_number(),
-         Label  = as.factor(Label))
-
-# 2) Стоп-слова: твої з splitted_stop_words або стандартні з tidytext
-sw <- if (exists("splitted_stop_words")) {
-  tolower(splitted_stop_words)
-} else {
-  tidytext::stop_words$word
-}
-
-# 3) Токенізація: одне слово в рядку + простий фільтр
-tidy_text <- df %>%
-  dplyr::select(doc_id, Label, text) %>%
-  tidytext::unnest_tokens(word, text) %>%
-  dplyr::filter(!word %in% sw,
-                stringr::str_detect(word, "[a-z]"))
-
-# (A) Розподіл класів
-df %>%
-  dplyr::count(Label) %>%
-  ggplot2::ggplot(ggplot2::aes(x = Label, y = n)) +
-  ggplot2::geom_col() +
-  ggplot2::labs(title = "Розподіл документів за класами (train)",
-                x = "Клас", y = "Кількість") +
-  ggplot2::theme_minimal()
-
-# (B) Топ-20 слів у всьому корпусі
-tidy_text %>%
-  dplyr::count(word, sort = TRUE) %>%
-  dplyr::slice_head(n = 20) %>%
-  ggplot2::ggplot(ggplot2::aes(x = reorder(word, n), y = n)) +
-  ggplot2::geom_col() +
-  ggplot2::coord_flip() +
-  ggplot2::labs(title = "Топ-20 слів (після чистки)",
-                x = NULL, y = "Частота") +
-  ggplot2::theme_minimal()
-
-# (C) Топ-10 слів у кожному класі
-top_by_class <- tidy_text %>%
-  dplyr::count(Label, word, sort = TRUE) %>%
-  dplyr::group_by(Label) %>%
-  dplyr::slice_head(n = 10) %>%
-  dplyr::ungroup()
-
-ggplot2::ggplot(top_by_class, ggplot2::aes(x = reorder(word, n), y = n)) +
-  ggplot2::geom_col() +
-  ggplot2::coord_flip() +
-  ggplot2::facet_wrap(~ Label, scales = "free_y") +
-  ggplot2::labs(title = "Топ-10 слів у кожному класі",
-                x = NULL, y = "Частота") +
-  ggplot2::theme_minimal()
-
-# (D) Гістограма довжин документів (після чистки)
-doc_len <- tidy_text %>%
-  dplyr::count(doc_id, name = "len") %>%
-  dplyr::left_join(df %>% dplyr::select(doc_id, Label), by = "doc_id")
-
-ggplot2::ggplot(doc_len, ggplot2::aes(x = len, fill = Label)) +
-  ggplot2::geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
-  ggplot2::labs(title = "Довжини документів (після стоп-слів)",
-                x = "Кількість слів", y = "Кількість документів") +
-  ggplot2::theme_minimal()
-```
-
 ## Conclusions
 
-Summarize your work by explaining in a few sentences the points listed
-below.
+#### Method
 
--   Describe the method implemented in general. Show what are
-    mathematical foundations you are basing your solution on.
--   List pros and cons of the method. This should include the
-    limitations of your method, all the assumption you make about the
-    nature of your data etc.
--   Explain why accuracy is not a good choice for the base metrics for
-    classification tasks. Why F1 score is always preferable?
+In this project, we implemented a Naive Bayes classifier for text
+classification tasks. The classifier is based on Bayes' theorem, which
+calculates the posterior probability of each class given the observed
+features (words in text).
+
+The "naive" assumption is that all words are conditionally independent.
+
+To prevent numerical underflow, we work in log space.
+
+$$
+logP(class∣text)=logP(class)+i=1∑n​logP(wordi​∣class)
+$$
+
+We also applied Laplace smoothing (add-one smoothing) to handle unseen
+words.
+
+#### Pros and cons
+
+**Advantages:**
+
+-   Fast training and prediction - requires only counting word
+    frequencies
+
+-   That implies it works well with small datasets
+
+**Disadvantages:**
+
+-   Strong independence assumption rarely holds in real text (words are
+    often correlated)
+
+-   Sensitive to irrelevant features
+
+-   Cannot capture word order or context (bag-of-words limitation)
+
+-   Performance degrades if training data is very imbalanced
+
+#### Why F1?
+
+**Accuracy** is misleading when classes are imbalanced. For example, if
+95% of news articles are "real" and only 5% are "fake", a classifier
+that always predicts "real" achieves 95% accuracy but is completely
+useless for detecting fake news.
+
+**F1 score** is preferable because it balances **Precision** and
+**Recall**:
+
+F1 = 2 × (Precision × Recall) / (Precision + Recall)
