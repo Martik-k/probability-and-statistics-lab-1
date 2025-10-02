@@ -16,7 +16,7 @@ knitr::opts_chunk$set(echo = TRUE)
 
 -   Kosiv Marta
 -   Ostap Kostiuk
--   Volodymyr Lehchylo-Yanishevskiy
+-   Volodymyr Legchylo Yanishevskyy
 
 ## Introduction
 
@@ -70,6 +70,7 @@ library(tidytext)
 library(readr)
 library(dplyr)
 library(ggplot2)
+library(tidyr)
 ```
 
 ## Outline of the work
@@ -157,27 +158,27 @@ tidy_text <- df %>%
   dplyr::filter(!word %in% sw,
                 stringr::str_detect(word, "[a-z]"))
 
-# розподіл класів
+# class distribution
 df %>%
   dplyr::count(Label) %>%
   ggplot2::ggplot(ggplot2::aes(x = Label, y = n)) +
   ggplot2::geom_col() +
-  ggplot2::labs(title = "Розподіл документів за класами (train)",
-                x = "Клас", y = "Кількість") +
+  ggplot2::labs(title = "Class distribution (train)",
+                x = "Class", y = "Count") +
   ggplot2::theme_minimal()
 
-# топ-20 слів 
+# top 20 words
 tidy_text %>%
   dplyr::count(word, sort = TRUE) %>%
   dplyr::slice_head(n = 20) %>%
   ggplot2::ggplot(ggplot2::aes(x = reorder(word, n), y = n)) +
   ggplot2::geom_col() +
   ggplot2::coord_flip() +
-  ggplot2::labs(title = "Топ-20 слів (після чистки)",
-                x = NULL, y = "Частота") +
+  ggplot2::labs(title = "Top 20 words (after cleaning)",
+                x = NULL, y = "Frequency") +
   ggplot2::theme_minimal()
 
-# топ-10 слів у кожному класі
+# top 10 words in each class
 top_by_class <- tidy_text %>%
   dplyr::count(Label, word, sort = TRUE) %>%
   dplyr::group_by(Label) %>%
@@ -188,20 +189,21 @@ ggplot2::ggplot(top_by_class, ggplot2::aes(x = reorder(word, n), y = n)) +
   ggplot2::geom_col() +
   ggplot2::coord_flip() +
   ggplot2::facet_wrap(~ Label, scales = "free_y") +
-  ggplot2::labs(title = "Топ-10 слів у кожному класі",
-                x = NULL, y = "Частота") +
+  ggplot2::labs(title = "Top 10 words in each class",
+                x = NULL, y = "Frequency") +
   ggplot2::theme_minimal()
 
-# гістограма довжин документів
+# histogram of document lengths
 doc_len <- tidy_text %>%
   dplyr::count(doc_id, name = "len") %>%
   dplyr::left_join(df %>% dplyr::select(doc_id, Label), by = "doc_id")
 
 ggplot2::ggplot(doc_len, ggplot2::aes(x = len, fill = Label)) +
   ggplot2::geom_histogram(bins = 30, alpha = 0.6, position = "identity") +
-  ggplot2::labs(title = "Довжини документів (після стоп-слів)",
-                x = "Кількість слів", y = "Кількість документів") +
+  ggplot2::labs(title = "Document lengths (after stop words)",
+                x = "Number of words", y = "Number of documents") +
   ggplot2::theme_minimal()
+
 ```
 
 ## Classifier implementation
@@ -403,6 +405,7 @@ naiveBayes <- setRefClass(
   
   # Combine all plots
   library(gridExtra)
+  library(grid)
   combined_plot <- grid.arrange(p1, p2, p3, p4, ncol = 2, nrow = 2,
                                 top = textGrob("Naive Bayes Classification Results", 
                                                gp = gpar(fontsize = 18, fontface = "bold")))
@@ -492,7 +495,6 @@ cat("Micro - Precision:", round(score_res$summary$micro$precision, 4),
     "F1:", round(score_res$summary$micro$f1, 4), "\n\n")
 
 # Per-class metrics
-cat("=== Per-Class Metrics ===\n")
 print(score_res$per_class %>% select(class, Precision, Recall, F1))
 cat("\n")
 
